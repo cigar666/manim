@@ -1123,6 +1123,7 @@ class Mobject(Container):
 
     def set_plot_depth(self, plot_depth_value):
         self.plot_depth = plot_depth_value
+        return self
 
     def get_plot_depth(self):
         return self.plot_depth
@@ -1131,6 +1132,7 @@ class Mobject(Container):
         # to update the plot_depth by the value of Z coordinate
         z_value = self.get_center()[-1]
         self.set_plot_depth(z_value)
+        return self
 
 class Group(Mobject):
     def __init__(self, *mobjects, **kwargs):
