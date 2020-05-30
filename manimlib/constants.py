@@ -121,6 +121,12 @@ PRODUCTION_QUALITY_CAMERA_CONFIG = {
     "frame_rate": 60,
 }
 
+ULTRA_HD_CAMERA_CONFIG = {
+    "pixel_height": 2160,
+    "pixel_width": 3840,
+    "frame_rate": 120,
+}
+
 HIGH_QUALITY_CAMERA_CONFIG = {
     "pixel_height": 1080,
     "pixel_width": 1920,

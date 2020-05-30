@@ -53,6 +53,11 @@ def parse_cli():
             help="Render at a high quality",
         ),
         parser.add_argument(
+            "-uhd", "--ultra_high_quality",
+            action="store_true",
+            help="Render at a ultra high quality",
+        ),
+        parser.add_argument(
             "-g", "--save_pngs",
             action="store_true",
             help="Save each frame as a png",
@@ -244,6 +249,8 @@ def get_camera_configuration(args):
         camera_config.update(manimlib.constants.MEDIUM_QUALITY_CAMERA_CONFIG)
     elif args.high_quality:
         camera_config.update(manimlib.constants.HIGH_QUALITY_CAMERA_CONFIG)
+    elif args.ultra_high_quality:
+        camera_config.update(manimlib.constants.ULTRA_HD_CAMERA_CONFIG)
     else:
         camera_config.update(manimlib.constants.PRODUCTION_QUALITY_CAMERA_CONFIG)
 
