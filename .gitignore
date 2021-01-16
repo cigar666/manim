@@ -147,3 +147,6 @@ dmypy.json
 
 # 
 /videos
+/my_projects
+*.xml
+*.bat
