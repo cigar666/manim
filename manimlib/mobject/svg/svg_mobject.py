@@ -2,10 +2,16 @@ import itertools as it
 import re
 import string
 import warnings
+import os
+import hashlib
 
 from xml.dom import minidom
 
-from manimlib.constants import *
+from manimlib.constants import DEFAULT_STROKE_WIDTH
+from manimlib.constants import ORIGIN, UP, DOWN, LEFT, RIGHT
+from manimlib.constants import BLACK
+from manimlib.constants import WHITE
+
 from manimlib.mobject.geometry import Circle
 from manimlib.mobject.geometry import Rectangle
 from manimlib.mobject.geometry import RoundedRectangle
@@ -13,7 +19,37 @@ from manimlib.mobject.types.vectorized_mobject import VGroup
 from manimlib.mobject.types.vectorized_mobject import VMobject
 from manimlib.utils.color import *
 from manimlib.utils.config_ops import digest_config
-from manimlib.utils.config_ops import digest_locals
+from manimlib.utils.directories import get_mobject_data_dir
+from manimlib.utils.images import get_full_vector_image_path
+
+
+def check_and_fix_percent_bug(sym):
+    # This is an ugly patch addressing something which should be
+    # addressed at a deeper level.
+    # The svg path for percent symbols have a known bug, so this
+    # checks if the symbol is (probably) a percentage sign, and
+    # splits it so that it's displayed properly.
+    if len(sym.get_points()) not in [315, 324, 468, 483] or len(sym.get_subpaths()) != 4:
+        return
+
+    sym = sym.family_members_with_points()[0]
+    new_sym = VMobject()
+    path_lengths = [len(path) for path in sym.get_subpaths()]
+    sym_points = sym.get_points()
+    if len(sym_points) in [315, 324]:
+        n = sum(path_lengths[:2])
+        p1 = sym_points[:n]
+        p2 = sym_points[n:]
+    elif len(sym_points) in [468, 483]:
+        p1 = np.vstack([
+            sym_points[:path_lengths[0]],
+            sym_points[-path_lengths[3]:]
+        ])
+        p2 = sym_points[path_lengths[0]:sum(path_lengths[:3])]
+    sym.set_points(p1)
+    new_sym.set_points(p2)
+    sym.add(new_sym)
+    sym.refresh_triangulation()
 
 
 def string_to_numbers(num_string):
@@ -37,30 +73,26 @@ class SVGMobject(VMobject):
         # TODO, style components should be read in, not defaulted
         "stroke_width": DEFAULT_STROKE_WIDTH,
         "fill_opacity": 1.0,
+        "path_string_config": {}
     }
 
     def __init__(self, file_name=None, **kwargs):
         digest_config(self, kwargs)
         self.file_name = file_name or self.file_name
-        self.ensure_valid_file()
-        VMobject.__init__(self, **kwargs)
-        self.move_into_position()
-
-    def ensure_valid_file(self):
-        file_name = self.file_name
         if file_name is None:
             raise Exception("Must specify file for SVGMobject")
-        possible_paths = [
-            os.path.join(os.path.join("assets", "svg_images"), file_name),
-            os.path.join(os.path.join("assets", "svg_images"), file_name + ".svg"),
-            os.path.join(os.path.join("assets", "svg_images"), file_name + ".xdv"),
-            file_name,
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                self.file_path = path
-                return
-        raise IOError(f"No file matching {file_name} in image directory")
+        self.file_path = get_full_vector_image_path(file_name)
+
+        super().__init__(**kwargs)
+        self.move_into_position()
+
+    def move_into_position(self):
+        if self.should_center:
+            self.center()
+        if self.height is not None:
+            self.set_height(self.height)
+        if self.width is not None:
+            self.set_width(self.width)
 
     def init_points(self):
         doc = minidom.parse(self.file_path)
@@ -117,7 +149,10 @@ class SVGMobject(VMobject):
         return mob.submobjects
 
     def path_string_to_mobject(self, path_string):
-        return VMobjectFromSVGPathstring(path_string)
+        return VMobjectFromSVGPathstring(
+            path_string,
+            **self.path_string_config,
+        )
 
     def use_to_mobjects(self, use_element):
         # Remove initial "#" character
@@ -139,8 +174,8 @@ class SVGMobject(VMobject):
     def polygon_to_mobject(self, polygon_element):
         path_string = polygon_element.getAttribute("points")
         for digit in string.digits:
-            path_string = path_string.replace(f" {digit}", f"{digit} L")
-        path_string = "M" + path_string
+            path_string = path_string.replace(f" {digit}", f"L {digit}")
+        path_string = path_string.replace("L", "M", 1)
         return self.path_string_to_mobject(path_string)
 
     def circle_to_mobject(self, circle_element):
@@ -222,13 +257,14 @@ class SVGMobject(VMobject):
         return mob
 
     def handle_transforms(self, element, mobject):
+        # TODO, this could use some cleaning...
         x, y = 0, 0
         try:
             x = self.attribute_to_float(element.getAttribute('x'))
             # Flip y
             y = -self.attribute_to_float(element.getAttribute('y'))
-            mobject.shift(x * RIGHT + y * UP)
-        except:
+            mobject.shift([x, y, 0])
+        except Exception:
             pass
 
         transform = element.getAttribute('transform')
@@ -249,7 +285,7 @@ class SVGMobject(VMobject):
             matrix[:, 1] *= -1
 
             for mob in mobject.family_members_with_points():
-                mob.points = np.dot(mob.points, matrix)
+                mob.apply_matrix(matrix.T)
             mobject.shift(x * RIGHT + y * UP)
         except:
             pass
@@ -305,29 +341,47 @@ class SVGMobject(VMobject):
         new_refs = dict([(e.getAttribute('id'), e) for e in self.get_all_childNodes_have_id(defs)])
         self.ref_to_element.update(new_refs)
 
-    def move_into_position(self):
-        if self.should_center:
-            self.center()
-        if self.height is not None:
-            self.set_height(self.height)
-        if self.width is not None:
-            self.set_width(self.width)
-
 
 class VMobjectFromSVGPathstring(VMobject):
+    CONFIG = {
+        "long_lines": True,
+        "should_subdivide_sharp_curves": False,
+        "should_remove_null_curves": False,
+    }
+
     def __init__(self, path_string, **kwargs):
         self.path_string = path_string
-        VMobject.__init__(self, **kwargs)
+        super().__init__(**kwargs)
 
     def init_points(self):
-        self.relative_point = ORIGIN
-        for command, coord_string in self.get_commands_and_coord_strings():
-            new_points = self.string_to_points(command, coord_string)
-            self.handle_command(command, new_points)
-        # For a healthy triangulation later
-        self.subdivide_sharp_curves()
-        # SVG treats y-coordinate differently
-        self.stretch(-1, 1, about_point=ORIGIN)
+        # TODO, move this caching operation
+        # higher up to Mobject somehow.
+        hasher = hashlib.sha256(self.path_string.encode())
+        path_hash = hasher.hexdigest()[:16]
+        points_filepath = os.path.join(get_mobject_data_dir(), f"{path_hash}_points.npy")
+        tris_filepath = os.path.join(get_mobject_data_dir(), f"{path_hash}_tris.npy")
+
+        if os.path.exists(points_filepath) and os.path.exists(tris_filepath):
+            self.set_points(np.load(points_filepath))
+            self.triangulation = np.load(tris_filepath)
+            self.needs_new_triangulation = False
+        else:
+            self.relative_point = np.array(ORIGIN)
+            for command, coord_string in self.get_commands_and_coord_strings():
+                new_points = self.string_to_points(command, coord_string)
+                self.handle_command(command, new_points)
+            if self.should_subdivide_sharp_curves:
+                # For a healthy triangulation later
+                self.subdivide_sharp_curves()
+            if self.should_remove_null_curves:
+                # Get rid of any null curves
+                self.set_points(self.get_points_without_null_curves())
+            # SVG treats y-coordinate differently
+            self.stretch(-1, 1, about_point=ORIGIN)
+            # Save to a file for future use
+            np.save(points_filepath, self.get_points())
+            np.save(tris_filepath, self.get_triangulation())
+        check_and_fix_percent_bug(self)
 
     def get_commands_and_coord_strings(self):
         all_commands = list(self.get_command_to_function_map().keys())
@@ -352,10 +406,13 @@ class VMobjectFromSVGPathstring(VMobject):
             if command.upper() == "M":
                 # Treat following points as relative line coordinates
                 command = "l"
+            if command.islower():
+                leftover_points -= self.relative_point
+                self.relative_point = self.get_last_point()
             self.handle_command(command, leftover_points)
         else:
             # Command is over, reset for future relative commands
-            self.relative_point = self.points[-1]
+            self.relative_point = self.get_last_point()
 
     def string_to_points(self, command, coord_string):
         numbers = string_to_numbers(coord_string)

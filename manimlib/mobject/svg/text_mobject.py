@@ -3,11 +3,18 @@ import os
 import copy
 import hashlib
 import cairo
-import manimlib.constants as consts
 from manimlib.constants import *
 from manimlib.mobject.svg.svg_mobject import SVGMobject
 from manimlib.utils.config_ops import digest_config
+from manimlib.utils.customization import get_customization
+from manimlib.utils.directories import get_text_dir
 
+
+TEXT_MOB_SCALE_FACTOR = 0.001048
+
+
+# Warning, these classes are currently based on an old rendering mode
+# not supported in this version of manim
 
 class TextSetting(object):
     def __init__(self, start, end, font, slant, weight, line_num=-1):
@@ -22,13 +29,15 @@ class TextSetting(object):
 class Text(SVGMobject):
     CONFIG = {
         # Mobject
-        'color': consts.WHITE,
+        'color': WHITE,
         'height': None,
+        'stroke_width': 0,
         # Text
         'font': '',
         'gradient': None,
         'lsh': -1,
         'size': 1,
+        'font_size': 48,
         'slant': NORMAL,
         'weight': NORMAL,
         't2c': {},
@@ -45,6 +54,7 @@ class Text(SVGMobject):
         self.lsh = self.size if self.lsh == -1 else self.lsh
 
         file_name = self.text2svg()
+        self.remove_last_M(file_name)
         SVGMobject.__init__(self, file_name, **config)
 
         if self.t2c:
@@ -55,7 +65,15 @@ class Text(SVGMobject):
             self.set_color_by_t2g()
 
         # anti-aliasing
-        self.scale(0.1)
+        if self.height is None:
+            self.scale(TEXT_MOB_SCALE_FACTOR * self.font_size)
+
+    def remove_last_M(self, file_name):
+        with open(file_name, 'r') as fpr:
+            content = fpr.read()
+        content = re.sub(r'Z M [^A-Za-z]*? "\/>', 'Z "/>', content)
+        with open(file_name, 'w') as fpw:
+            fpw.write(content)
 
     def find_indexes(self, word):
         m = re.match(r'\[([0-9\-]{0,}):([0-9\-]{0,})\]', word)
@@ -118,7 +136,7 @@ class Text(SVGMobject):
         settings = self.font + self.slant + self.weight
         settings += str(self.t2f) + str(self.t2s) + str(self.t2w)
         settings += str(self.lsh) + str(self.size)
-        id_str = self.text+settings
+        id_str = self.text + settings
         hasher = hashlib.sha256()
         hasher.update(id_str.encode())
         return hasher.hexdigest()[:16]
@@ -175,11 +193,11 @@ class Text(SVGMobject):
         lsh = self.lsh * 10
 
         if self.font == '':
-            print(NOT_SETTING_FONT_MSG)
+            self.font = get_customization()['style']['font']
 
-        dir_name = consts.TEXT_DIR
+        dir_name = get_text_dir()
         hash_name = self.text2hash()
-        file_name = os.path.join(dir_name, hash_name)+'.svg'
+        file_name = os.path.join(dir_name, hash_name) + '.svg'
         if os.path.exists(file_name):
             return file_name
 
@@ -201,7 +219,7 @@ class Text(SVGMobject):
             if setting.line_num != last_line_num:
                 offset_x = 0
                 last_line_num = setting.line_num
-            context.move_to(START_X + offset_x, START_Y + lsh*setting.line_num)
+            context.move_to(START_X + offset_x, START_Y + lsh * setting.line_num)
             context.show_text(text)
             offset_x += context.text_extents(text)[4]
 

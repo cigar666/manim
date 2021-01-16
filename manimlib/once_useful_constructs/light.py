@@ -67,9 +67,9 @@ class SwitchOff(LaggedStartMap):
         if (not isinstance(light, AmbientLight) and not isinstance(light, Spotlight)):
             raise Exception(
                 "Only AmbientLights and Spotlights can be switched off")
-        light.submobjects = light.submobjects[::-1]
+        light.set_submobjects(light.submobjects[::-1])
         LaggedStartMap.__init__(self, FadeOut, light, **kwargs)
-        light.submobjects = light.submobjects[::-1]
+        light.set_submobjects(light.submobjects[::-1])
 
 
 class Lighthouse(SVGMobject):
@@ -182,7 +182,7 @@ class Spotlight(VMobject):
         return self.source_point.get_location()
 
     def init_points(self):
-        self.submobjects = []
+        self.set_submobjects([])
 
         self.add(self.source_point)
 
@@ -388,7 +388,7 @@ class LightSource(VMobject):
     def has_screen(self):
         if self.screen is None:
             return False
-        elif np.size(self.screen.points) == 0:
+        elif self.screen.get_num_points() == 0:
             return False
         else:
             return True
@@ -493,7 +493,7 @@ class LightSource(VMobject):
         )
         new_ambient_light.apply_matrix(self.rotation_matrix())
         new_ambient_light.move_source_to(self.get_source_point())
-        self.ambient_light.submobjects = new_ambient_light.submobjects
+        self.ambient_light.set_submobjects(new_ambient_light.submobjects)
 
     def get_source_point(self):
         return self.source_point.get_location()
@@ -572,7 +572,7 @@ class LightSource(VMobject):
 
         # add two control points for the outer cone
         if np.size(anchors) == 0:
-            self.shadow.points = []
+            self.shadow.resize_points(0)
             return
 
         ray1 = anchors[source_index - 1] - projected_source

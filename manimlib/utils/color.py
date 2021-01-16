@@ -2,6 +2,7 @@ import random
 
 from colour import Color
 import numpy as np
+from matplotlib.cm import get_cmap
 
 from manimlib.constants import PALETTE
 from manimlib.constants import WHITE
@@ -26,7 +27,7 @@ def color_to_rgba(color, alpha=1):
 def rgb_to_color(rgb):
     try:
         return Color(rgb=rgb)
-    except:
+    except ValueError:
         return Color(WHITE)
 
 
@@ -35,7 +36,11 @@ def rgba_to_color(rgba):
 
 
 def rgb_to_hex(rgb):
-    return "#" + "".join(hex(int(255 * x))[2:] for x in rgb)
+    return "#" + "".join(
+        hex(int_x // 16)[2] + hex(int_x % 16)[2]
+        for x in rgb
+        for int_x in [int(255 * x)]
+    )
 
 
 def hex_to_rgb(hex_code):
@@ -84,8 +89,7 @@ def interpolate_color(color1, color2, alpha):
 
 def average_color(*colors):
     rgbs = np.array(list(map(color_to_rgb, colors)))
-    mean_rgb = np.apply_along_axis(np.mean, 0, rgbs)
-    return rgb_to_color(mean_rgb)
+    return rgb_to_color(rgbs.mean(0))
 
 
 def random_bright_color():
@@ -109,3 +113,11 @@ def get_shaded_rgb(rgb, point, unit_normal_vect, light_source):
     result = rgb + factor
     clip_in_place(rgb + factor, 0, 1)
     return result
+
+
+def get_colormap_list(map_name="viridis", n_colors=9):
+    rgbs = get_cmap(map_name).colors  # Make more general?
+    return [
+        rgbs[int(n)]
+        for n in np.linspace(0, len(rgbs) - 1, n_colors)
+    ]

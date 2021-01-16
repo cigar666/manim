@@ -4,7 +4,7 @@ from manimlib.animation.creation import Write, DrawBorderThenFill, ShowCreation
 from manimlib.animation.transform import Transform
 from manimlib.animation.update import UpdateFromAlphaFunc
 from manimlib.constants import *
-from manimlib.mobject.functions import ParametricFunction
+from manimlib.mobject.functions import ParametricCurve
 from manimlib.mobject.geometry import Line
 from manimlib.mobject.geometry import Rectangle
 from manimlib.mobject.geometry import RegularPolygon
@@ -165,7 +165,7 @@ class GraphScene(Scene):
                 y = self.y_max
             return self.coords_to_point(x, y)
 
-        graph = ParametricFunction(
+        graph = ParametricCurve(
             parameterized_function,
             color=color,
             **kwargs
@@ -307,7 +307,7 @@ class GraphScene(Scene):
         }
         added_anims = kwargs.get("added_anims", [])
         transform_kwargs.update(kwargs)
-        curr_rects.align_submobjects(new_rects)
+        curr_rects.align_family(new_rects)
         x_coords = set()  # Keep track of new repetitions
         for rect in curr_rects:
             x = rect.get_center()[0]
@@ -430,7 +430,7 @@ class GraphScene(Scene):
         if include_secant_line:
             secant_line_color = secant_line_color or self.default_derivative_color
             group.secant_line = Line(p1, p2, color=secant_line_color)
-            group.secant_line.scale_in_place(
+            group.secant_line.scale(
                 secant_line_length / group.secant_line.get_length()
             )
             group.add(group.secant_line)

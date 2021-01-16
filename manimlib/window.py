@@ -2,13 +2,10 @@ import moderngl_window as mglw
 from moderngl_window.context.pyglet.window import Window as PygletWindow
 from moderngl_window.timers.clock import Timer
 
-from manimlib.constants import DEFAULT_PIXEL_WIDTH
-from manimlib.constants import DEFAULT_PIXEL_HEIGHT
 from manimlib.utils.config_ops import digest_config
 
 
 class Window(PygletWindow):
-    size = (DEFAULT_PIXEL_WIDTH, DEFAULT_PIXEL_HEIGHT)
     fullscreen = False
     resizable = True
     gl_version = (3, 3)
@@ -17,12 +14,14 @@ class Window(PygletWindow):
     cursor = True
 
     def __init__(self, scene, **kwargs):
-        digest_config(self, kwargs)
         super().__init__(**kwargs)
+        digest_config(self, kwargs)
         self.scene = scene
         self.title = str(scene)
-        # Put at the top of the screen
-        self.position = (self.position[0], 0)
+        if "position" in kwargs:
+            self.position = kwargs["position"]
+
+        self.pressed_keys = set()
 
         mglw.activate_context(window=self)
         self.timer = Timer()
@@ -61,13 +60,15 @@ class Window(PygletWindow):
         offset = self.pixel_coords_to_space_coords(x_offset, y_offset, relative=True)
         self.scene.on_mouse_scroll(point, offset)
 
-    def on_key_release(self, symbol, modifiers):
-        super().on_key_release(symbol, modifiers)
-        self.scene.on_key_release(symbol, modifiers)
-
     def on_key_press(self, symbol, modifiers):
+        self.pressed_keys.add(symbol)  # Modifiers?
         super().on_key_press(symbol, modifiers)
         self.scene.on_key_press(symbol, modifiers)
+
+    def on_key_release(self, symbol, modifiers):
+        self.pressed_keys.difference_update({symbol})  # Modifiers?
+        super().on_key_release(symbol, modifiers)
+        self.scene.on_key_release(symbol, modifiers)
 
     def on_resize(self, width: int, height: int):
         super().on_resize(width, height)
@@ -84,3 +85,6 @@ class Window(PygletWindow):
     def on_close(self):
         super().on_close()
         self.scene.on_close()
+
+    def is_key_pressed(self, symbol):
+        return (symbol in self.pressed_keys)

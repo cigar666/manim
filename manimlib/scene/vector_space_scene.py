@@ -288,7 +288,7 @@ class LinearTransformationScene(VectorScene):
         "background_plane_kwargs": {
             "color": GREY,
             "axis_config": {
-                "stroke_color": LIGHT_GREY,
+                "stroke_color": GREY_B,
             },
             "axis_config": {
                 "color": GREY,
@@ -408,7 +408,7 @@ class LinearTransformationScene(VectorScene):
         else:
             label_mob.target_text = "%s(%s)" % (
                 transformation_name,
-                label_mob.get_tex_string()
+                label_mob.get_tex()
             )
         label_mob.vector = vector
         label_mob.kwargs = kwargs
@@ -461,7 +461,7 @@ class LinearTransformationScene(VectorScene):
             v.target = Vector(func(v.get_end()), color=v.get_color())
             norm = get_norm(v.target.get_end())
             if norm < 0.1:
-                v.target.get_tip().scale_in_place(norm)
+                v.target.get_tip().scale(norm)
         return self.get_piece_movement(self.moving_vectors)
 
     def get_transformable_label_movement(self):

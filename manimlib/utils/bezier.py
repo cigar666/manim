@@ -3,16 +3,21 @@ import numpy as np
 
 from manimlib.utils.simple_functions import choose
 from manimlib.utils.space_ops import find_intersection
+from manimlib.utils.space_ops import cross2d
 
 CLOSED_THRESHOLD = 0.001
 
 
 def bezier(points):
     n = len(points) - 1
-    return lambda t: sum([
-        ((1 - t)**(n - k)) * (t**k) * choose(n, k) * point
-        for k, point in enumerate(points)
-    ])
+
+    def result(t):
+        return sum([
+            ((1 - t)**(n - k)) * (t**k) * choose(n, k) * point
+            for k, point in enumerate(points)
+        ])
+
+    return result
 
 
 def partial_bezier_points(points, a, b):
@@ -39,10 +44,39 @@ def partial_bezier_points(points, a, b):
     ]
 
 
+# Shortened version of partial_bezier_points just for quadratics,
+# since this is called a fair amount
+def partial_quadratic_bezier_points(points, a, b):
+    if a == 1:
+        return 3 * [points[-1]]
+
+    def curve(t):
+        return points[0] * (1 - t) * (1 - t) + 2 * points[1] * t * (1 - t) + points[2] * t * t
+    # bezier(points)
+    h0 = curve(a) if a > 0 else points[0]
+    h2 = curve(b) if b < 1 else points[2]
+    h1_prime = (1 - a) * points[1] + a * points[2]
+    end_prop = (b - a) / (1. - a)
+    h1 = (1 - end_prop) * h0 + end_prop * h1_prime
+    return [h0, h1, h2]
+
+
 # Linear interpolation variants
 
 def interpolate(start, end, alpha):
-    return (1 - alpha) * start + alpha * end
+    try:
+        return (1 - alpha) * start + alpha * end
+    except TypeError:
+        print(type(start), start.dtype)
+        print(type(end), start.dtype)
+        print(alpha)
+        import sys
+        sys.exit(2)
+
+
+def set_array_by_interpolation(arr, arr1, arr2, alpha, interp_func=interpolate):
+    arr[:] = interp_func(arr1, arr2, alpha)
+    return arr
 
 
 def integer_interpolate(start, end, alpha):
@@ -82,9 +116,32 @@ def match_interpolate(new_start, new_end, old_start, old_end, old_value):
 
 
 # Figuring out which bezier curves most smoothly connect a sequence of points
+def get_smooth_quadratic_bezier_handle_points(points):
+    n = len(points)
+    # Top matrix sets the constraint h_i + h_{i + 1} = 2 * P_i
+    top_mat = np.zeros((n - 2, n - 1))
+    np.fill_diagonal(top_mat, 1)
+    np.fill_diagonal(top_mat[:, 1:], 1)
+
+    # Lower matrix sets the constraint that 2(h1 - h0)= p2 - p0 and 2(h_{n-1}- h_{n-2}) = p_n - p_{n-2}
+    low_mat = np.zeros((2, n - 1))
+    low_mat[0, :2] = [-2, 2]
+    low_mat[1, -2:] = [-2, 2]
+
+    # Use the pseudoinverse to find a near solution to these constraints
+    full_mat = np.vstack([top_mat, low_mat])
+    full_mat_pinv = np.linalg.pinv(full_mat)
+
+    rhs = np.vstack([
+        2 * points[1:-1],
+        [points[2] - points[0]],
+        [points[-1] - points[-3]],
+    ])
+
+    return np.dot(full_mat_pinv, rhs)
 
 
-def get_smooth_handle_points(points):
+def get_smooth_cubic_bezier_handle_points(points):
     points = np.array(points)
     num_handles = len(points) - 1
     dim = points.shape[1]
@@ -117,6 +174,7 @@ def get_smooth_handle_points(points):
 
     def solve_func(b):
         return linalg.solve_banded((l, u), diag, b)
+
     use_closed_solve_function = is_closed(points)
     if use_closed_solve_function:
         # Get equations to relate first and last points
@@ -182,26 +240,21 @@ def get_quadratic_approximation_of_cubic(a0, h0, h1, a1):
     q = h1 - 2 * h0 + a0
     r = a1 - 3 * h1 + 3 * h0 - a0
 
-    def cross2d(v, w):
-        return v[:, 0] * w[:, 1] - v[:, 1] * w[:, 0]
-
     a = cross2d(q, r)
     b = cross2d(p, r)
     c = cross2d(p, q)
 
     disc = b * b - 4 * a * c
     has_infl &= (disc > 0)
-    sqrt_disc = np.sqrt(abs(disc))
-    # print(a, b, c, sqrt_disc)
+    sqrt_disc = np.sqrt(np.abs(disc))
     settings = np.seterr(all='ignore')
-    ti_min, ti_max = [
-        np.true_divide(
-            -b + sgn * sqrt_disc, 2 * a,
-            out=(-c / b),
-            where=(a != 0),
-        )
-        for sgn in [-1, +1]
-    ]
+    ti_bounds = []
+    for sgn in [-1, +1]:
+        ti = (-b + sgn * sqrt_disc) / (2 * a)
+        ti[a == 0] = (-c / b)[a == 0]
+        ti[(a == 0) & (b == 0)] = 0
+        ti_bounds.append(ti)
+    ti_min, ti_max = ti_bounds
     np.seterr(**settings)
     ti_min_in_range = has_infl & (0 < ti_min) & (ti_min < 1)
     ti_max_in_range = has_infl & (0 < ti_max) & (ti_max < 1)
@@ -238,7 +291,8 @@ def get_quadratic_approximation_of_cubic(a0, h0, h1, a1):
 
 
 def get_smooth_quadratic_bezier_path_through(points):
-    h0, h1 = get_smooth_handle_points(points)
+    # TODO
+    h0, h1 = get_smooth_cubic_bezier_handle_points(points)
     a0 = points[:-1]
     a1 = points[1:]
     return get_quadratic_approximation_of_cubic(a0, h0, h1, a1)
